@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="250" viewBox="0 0 860 250" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="860" height="250" rx="12" fill="#ffffff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b4252"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+  </defs>
+  <g font-size="15" text-anchor="middle">
+    <rect x="20" y="70" width="150" height="70" rx="10" fill="#e8eefc" stroke="#3056c8"/>
+    <text x="95" y="100" font-weight="600" fill="#1e3a8a">DualSense</text>
+    <text x="95" y="122" font-size="12" fill="#334155">USB or Bluetooth</text>
+
+    <rect x="240" y="60" width="190" height="90" rx="10" fill="#e9f7ef" stroke="#1f8a4c"/>
+    <text x="335" y="92" font-weight="600" fill="#14532d">DualSense Bridge</text>
+    <text x="335" y="113" font-size="12" fill="#334155">buttons, sticks, analog L2/R2</text>
+    <text x="335" y="131" font-size="12" fill="#334155">trigger profile</text>
+
+    <rect x="500" y="70" width="140" height="70" rx="10" fill="#f1f5f9" stroke="#64748b"/>
+    <text x="570" y="100" font-weight="600" fill="#0f172a">ViGEmBus</text>
+    <text x="570" y="122" font-size="12" fill="#334155">virtual Xbox 360 pad</text>
+
+    <rect x="710" y="70" width="130" height="70" rx="10" fill="#fef3c7" stroke="#b45309"/>
+    <text x="775" y="110" font-weight="600" fill="#78350f">Game</text>
+
+    <rect x="240" y="180" width="190" height="50" rx="10" fill="#fdf2f8" stroke="#be185d"/>
+    <text x="335" y="210" font-weight="600" fill="#831843">HidHide</text>
+  </g>
+  <g stroke="#3b4252" stroke-width="2" fill="none">
+    <line x1="170" y1="95" x2="236" y2="95" marker-end="url(#a)"/>
+    <line x1="430" y1="95" x2="496" y2="95" marker-end="url(#a)"/>
+    <line x1="640" y1="95" x2="706" y2="95" marker-end="url(#a)"/>
+  </g>
+  <g stroke="#c2410c" stroke-width="2" fill="none" stroke-dasharray="6 4">
+    <line x1="706" y1="125" x2="644" y2="125" marker-end="url(#r)"/>
+    <line x1="496" y1="125" x2="434" y2="125" marker-end="url(#r)"/>
+    <line x1="236" y1="125" x2="174" y2="125" marker-end="url(#r)"/>
+  </g>
+  <text x="540" y="160" font-size="12" fill="#c2410c" text-anchor="middle">rumble back to the controller</text>
+  <path d="M430,205 C600,205 760,200 775,144" stroke="#be185d" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="640" y="225" font-size="12" fill="#831843" text-anchor="middle">hides the real DualSense from the game (no double input)</text>
+  <text x="20" y="35" font-size="17" font-weight="600" fill="#0f172a">How it works</text>
+</svg>

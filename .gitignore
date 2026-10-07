@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.lnk
+build/
+dist/
+*.spec
+*.log
+
+push_to_github.bat

@@ -1,0 +1,4 @@
+hidapi
+vgamepad
+pystray
+pillow
