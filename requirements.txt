@@ -2,3 +2,5 @@ hidapi
 vgamepad
 pystray
 pillow
+numpy
+pyaudiowpatch

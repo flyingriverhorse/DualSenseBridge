@@ -205,16 +205,20 @@ class Output:
         self.seq = 0
 
     def report(self, large, small, bluetooth, l2=None, r2=None, light=None, setup=False,
-               model="dualsense"):
+               model="dualsense", hd=False):
         """Rumble always. Trigger effects and light bar color only when given
         (the controller keeps them until changed). `setup` ends the DualSense's
         own startup light animation; send it once after connecting."""
         if model == "ds4":
             return self._ds4(large, small, bluetooth, light)
         c = bytearray(COMMON_LEN)
-        c[OFF_FLAG0] = FLAG0_COMPAT_VIBRATION | FLAG0_HAPTICS_SELECT
-        c[OFF_MOTOR_LEFT] = large & 0xFF
-        c[OFF_MOTOR_RIGHT] = small & 0xFF
+        if not hd:
+            # rumble emulation; this also closes the audio haptics channel
+            c[OFF_FLAG0] = FLAG0_COMPAT_VIBRATION | FLAG0_HAPTICS_SELECT
+            c[OFF_MOTOR_LEFT] = large & 0xFF
+            c[OFF_MOTOR_RIGHT] = small & 0xFF
+        # hd=True: no rumble flags at all, so sound sent to the controller's audio
+        # channels 3-4 drives the haptic actuators (tested on a DualSense over USB)
         if r2 is not None:
             c[OFF_FLAG0] |= FLAG0_RIGHT_TRIGGER
             c[OFF_RIGHT_TRIGGER:OFF_RIGHT_TRIGGER + TRIGGER_LEN] = r2

@@ -1,16 +1,27 @@
-# DualSense Xbox Bridge
+# DualSense Bridge
 
-A small Windows app that makes a **PS5 DualSense** (or **PS4 DualShock 4**) controller show up as an **Xbox 360 controller**, over **USB or Bluetooth**.
+A small, free Windows app that makes a **PS5 DualSense** (or **PS4 DualShock 4**) controller show up as an **Xbox 360 controller**, over **USB or Bluetooth**, with **HD haptics on PC**, sound-to-vibration and adaptive-trigger profiles. An open-source alternative to DS4Windows and DSX.
+
+<p align="center"><img src="docs/demo.gif" alt="DualSense Bridge window: Xbox mode on, Silent Hill f profile, live trigger values" width="420"></p>
 
 - **Analog triggers** in every Xbox game (L2/R2 go 0–255, not just on/off)
 - **Rumble** from the game goes to the DualSense, over USB and Bluetooth
 - **No double input**: the real DualSense is hidden from games while Xbox mode is on ([HidHide](https://github.com/nefarius/HidHide))
 - **One click to switch back**: turn Xbox mode off and the DualSense is a normal DualSense again, with full native support in games like Silent Hill 2 or Sony's PC ports
 - **Trigger profiles (experimental)**: adaptive-trigger feel (resistance, weapon click, buzz) for 50+ games, with several feel presets
+- **Sound to vibration (experimental)**: feel the game's audio.
+  - **HD haptics** (DualSense over USB): the sound itself drives the DualSense's haptic actuators, like on a PS5; the game's rumble is mixed in.
+  - **Rumble motors** (USB and Bluetooth): bass on the left motor, high sounds on the right. HD mode falls back to this over Bluetooth.
+  - Pick which speakers/headphones to listen to (e.g. SteelSeries Sonar), with a built-in test sound
 - **Trigger kick**: optional short kick in the triggers when the game rumbles (shots, hits)
 - **Light bar**: automatic color by mode (green = Xbox mode, blue = off, red = low battery), your own color, or off
 - **DualShock 4** works too (mapping, rumble, light bar; adaptive triggers are DualSense-only)
+- **Automatic per game**: when a game comes to the front, its trigger profile and Xbox mode switch on their own (built-in list for many games; "Remember for this game" for the rest). Native DualSense games switch Xbox mode off
 - Auto-reconnect, battery level and low-battery warning, tray icon, start with Windows, update check
+
+| Controller tab | Settings tab |
+| --- | --- |
+| ![Controller tab](docs/screenshot-controller.png) | ![Settings tab](docs/screenshot-settings.png) |
 
 ![How it works](docs/how-it-works.svg)
 
@@ -51,9 +62,10 @@ Start **DualSense Bridge** from the Start menu or desktop shortcut and accept th
 | **Xbox mode** | **ON**: games see an Xbox 360 controller, the DualSense is hidden. **OFF**: games see the DualSense as it is. |
 | **Trigger profile** | Pick your game (type to search). Effects apply while Xbox mode is on. |
 | **Test trigger effects** | Plays every effect for a few seconds; press L2/R2 to feel them. |
+| **Per game** | Shows the game in front. With auto-switch on, its profile and Xbox mode are applied automatically. **Remember for this game** saves the current profile + Xbox mode for it; **Forget** removes that. |
 | **Live** | Trigger values and the rumble the game is sending. |
 
-The **Settings** tab has the light bar (automatic / your color / off, brightness), the trigger kick, start with Windows, the low-battery warning and the update check.
+The **Settings** tab has the light bar (automatic / your color / off, brightness), the trigger kick, sound to vibration (HD haptics or motors, which output to listen to, strength, sensitivity, test sound), start with Windows, the low-battery warning and the update check.
 
 Closing the window keeps the app in the **tray**. Right-click the tray icon to toggle Xbox mode or quit. The icon is green when Xbox mode is on, grey when off and red when no controller is connected.
 
@@ -130,6 +142,8 @@ Open **Win+R → `joy.cpl`** (or the **Open joy.cpl** button):
 
 | Problem | Fix |
 | --- | --- |
+| HD haptics selected but it says "rumble motors" | HD haptics need the DualSense on a **USB data cable** (Windows only creates the controller's audio device over USB). Over Bluetooth the motors are used instead. |
+| Sound to vibration feels nothing in games, but the test works | The game plays through a different output than the one selected. In *Settings → Listen to* pick the device you actually hear the game on (e.g. *SteelSeries Sonar - Gaming*, your headset). |
 | "No controller" | Check the cable or Bluetooth. Close Steam and DS4Windows, they can grab the controller. |
 | Cable plugged in but it still says Bluetooth | The DualSense stays on Bluetooth while charging. Turn it off (hold PS ~10 s) or turn PC Bluetooth off, then plug in. |
 | Nothing over USB at all | Some USB-C cables only charge. Try a data cable, directly on the PC. |
@@ -151,6 +165,13 @@ For scripting or debugging, everything also works without the window (run as adm
 .venv\Scripts\python.exe src\trigger_test.py          # cycle the trigger effects
 ```
 
+## Developing
+
+- `scripts\setup.bat` once, then `scripts\build.bat` to build.
+- **Auto-build while developing:** start `scripts\dev_watch.bat` (as administrator) and leave it open. Creating an empty file named `.rebuild` in the project folder closes the app, rebuilds `dist\DualSenseBridge.exe` and starts it again (`build_log.txt`, `build_status.txt`). An empty `.rundiag` runs `scripts\diag.py` and writes `diag_out.txt`.
+- README images: `scripts\\screenshots.py` (run with the project's Python) re-creates `docs/screenshot-*.png` and `docs/demo.gif` from the real window with demo values.
+- Releases: bump `src/version.py`, update `CHANGELOG.md`, push, and push a tag `vX.Y.Z`. GitHub Actions builds the exe, the installer and the portable zip.
+
 ## Project layout
 
 ```
@@ -165,11 +186,16 @@ DualSenseBridge/
 │   ├── output.py          rumble, trigger effects, Bluetooth CRC32
 │   ├── hiding.py          HidHide control
 │   ├── bridge_profiles.py reads profiles.json
+│   ├── audio_haptics.py   sound to vibration (WASAPI loopback → motors)
+│   ├── game_watch.py      detects the game in the foreground
+│   ├── version.py         app version + repo name (update check)
 │   └── trigger_test.py    command-line trigger effect test
 ├── scripts/
 │   ├── setup.bat          run from source: venv, packages, desktop shortcut
 │   ├── build.bat          build the exe (and the installer if Inno Setup is installed)
-│   └── get_drivers.ps1    downloads the ViGEmBus / HidHide installers to bundle
+│   ├── get_drivers.ps1    downloads the ViGEmBus / HidHide installers to bundle
+│   ├── dev_watch.bat/.ps1 auto-rebuild helper for development
+│   └── diag.py            diagnostics run by dev_watch
 ├── installer/DualSenseBridge.iss   Inno Setup script
 ├── assets/icon.ico
 ├── docs/how-it-works.svg
@@ -189,7 +215,10 @@ DualSenseBridge/
 - [x] Light bar colors, low-battery warning, update check
 - [x] Trigger kick on in-game rumble
 - [x] DualShock 4 support (untested on hardware so far: reports welcome)
-- [ ] Automatic profile per game (detect the running game)
+- [x] Sound to vibration over USB and Bluetooth (rumble motors)
+- [x] Real HD haptics from game audio over USB (DualSense audio channels 3–4)
+- [ ] HD haptics over Bluetooth (reverse-engineered protocol, experimental)
+- [x] Automatic profile and Xbox mode per game
 - [ ] Profile editor with live preview
 - [ ] Gyro aiming, stick deadzones, button remapping
 

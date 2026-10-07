@@ -23,7 +23,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install hidapi pystray pillow pyinstaller
+          pip install hidapi pystray pillow numpy pyaudiowpatch pyinstaller
           # vgamepad only ships as source, and its setup.py launches the ViGEmBus installer
           # and waits for it - that hangs forever on a headless runner. The package itself is
           # plain Python + ViGEmClient.dll, so unpack it into vendor/ instead of installing it.

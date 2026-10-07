@@ -26,6 +26,7 @@ if not FROZEN:
 
 APP_NAME = "DualSense Bridge"
 LOW_BATTERY = 15
+DEFAULT_OUTPUT = "Windows default speakers"
 SETTINGS_DIR = os.path.join(os.environ.get("APPDATA", HERE), "DualSenseBridge")
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "settings.json")
 NO_WINDOW = 0x08000000
@@ -141,11 +142,12 @@ class App:
         self.tray_tip_shown = False
 
         root.title(APP_NAME)
-        base = getattr(sys, "_MEIPASS", HERE)
-        try:
-            root.iconbitmap(os.path.join(base, "assets", "icon.ico"))
-        except Exception:
-            pass
+        for base in (getattr(sys, "_MEIPASS", HERE), os.path.dirname(HERE)):   # exe, or running from src/
+            try:
+                root.iconbitmap(os.path.join(base, "assets", "icon.ico"))
+                break
+            except Exception:
+                pass
         root.resizable(False, False)
         root.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
         pad = {"padx": 12, "pady": 4}
@@ -193,6 +195,22 @@ class App:
         ttk.Button(row, text="Test trigger effects", command=self.engine.start_test).pack(side="left")
         ttk.Button(row, text="Open joy.cpl", command=lambda: os.startfile("joy.cpl")).pack(side="left", padx=6)
 
+        # automatic switching per game
+        box = ttk.LabelFrame(main, text="Per game")
+        box.pack(fill="x", **pad)
+        self.var_autogame = tk.BooleanVar(value=self.settings.get("auto_game", True))
+        ttk.Checkbutton(box, text="Switch profile and Xbox mode automatically when a game starts",
+                        variable=self.var_autogame, command=self.save_autogame).pack(anchor="w", padx=8, pady=(6, 0))
+        self.lbl_game = ttk.Label(box, text="No game detected yet.", wraplength=440, justify="left")
+        self.lbl_game.pack(anchor="w", padx=8, pady=(2, 2))
+        row = ttk.Frame(box)
+        row.pack(fill="x", padx=8, pady=(0, 8))
+        self.btn_remember = ttk.Button(row, text="Remember for this game", command=self.remember_game,
+                                       state="disabled")
+        self.btn_remember.pack(side="left")
+        self.btn_forget = ttk.Button(row, text="Forget", command=self.forget_game, state="disabled")
+        self.btn_forget.pack(side="left", padx=6)
+
         # live view
         box = ttk.LabelFrame(main, text="Live")
         box.pack(fill="x", **pad)
@@ -227,6 +245,13 @@ class App:
         self.cmb.set(display_name(last) if last in self.games else self.names[0])
         self.choose_profile(save=False)
         self.engine.set_xbox(self.settings.get("xbox", False))
+
+        from game_watch import GameWatcher, known_games
+        self.known = known_games(self.profiles)
+        self.native = {e.lower() for e in self.profiles.get("_native_exe", {}).get("list", [])}
+        self.game = None                       # last game exe seen in the foreground
+        self.watcher = GameWatcher(lambda exe: self.q.put(("game", exe)))
+        self.watcher.start()
 
         self.start_tray()
         if start_minimized:
@@ -267,6 +292,52 @@ class App:
         ttk.Label(box, text="DualSense only, in Xbox mode. Works with or without a trigger profile.",
                   foreground="#666").pack(anchor="w", padx=26, pady=(0, 6))
 
+        box = ttk.LabelFrame(opts, text="Sound to vibration (experimental)")
+        box.pack(fill="x", **pad)
+        self.var_audio = tk.BooleanVar(value=st.get("audio", False))
+        ttk.Checkbutton(box, text="Feel the game's sound: bass → left motor, high sounds → right motor",
+                        variable=self.var_audio, command=self.apply_audio).pack(anchor="w", padx=8, pady=(6, 0))
+        ttk.Label(box, text="Xbox mode, USB or Bluetooth. Adds to the game's own rumble.",
+                  foreground="#666").pack(anchor="w", padx=26)
+        row = ttk.Frame(box)
+        row.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Label(row, text="Feel it as", width=11).pack(side="left")
+        self.var_ahd = tk.BooleanVar(value=st.get("audio_hd", True))
+        ttk.Radiobutton(row, text="HD haptics (DualSense on USB)", value=True, variable=self.var_ahd,
+                        command=self.apply_audio).pack(side="left", padx=(6, 0))
+        ttk.Radiobutton(row, text="Rumble motors", value=False, variable=self.var_ahd,
+                        command=self.apply_audio).pack(side="left", padx=6)
+        ttk.Label(box, text="HD haptics fall back to the motors over Bluetooth.", foreground="#666"
+                  ).pack(anchor="w", padx=26)
+        row = ttk.Frame(box)
+        row.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Label(row, text="Listen to", width=11).pack(side="left")
+        self.var_adev = tk.StringVar(value=st.get("audio_device") or DEFAULT_OUTPUT)
+        self.cmb_adev = ttk.Combobox(row, textvariable=self.var_adev, state="readonly", width=44)
+        self.cmb_adev.pack(side="left", padx=6)
+        self.cmb_adev.bind("<<ComboboxSelected>>", lambda e: self.apply_audio())
+        ttk.Button(row, text="↻", width=3, command=self.refresh_outputs).pack(side="left")
+        self.refresh_outputs()
+        row = ttk.Frame(box)
+        row.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Label(row, text="Strength", width=11).pack(side="left")
+        self.var_astr = tk.IntVar(value=st.get("audio_strength", 100))
+        ttk.Scale(row, from_=10, to=200, variable=self.var_astr, length=220,
+                  command=lambda v: self.apply_audio()).pack(side="left", padx=6)
+        row = ttk.Frame(box)
+        row.pack(fill="x", padx=8, pady=(2, 0))
+        ttk.Label(row, text="Sensitivity", width=11).pack(side="left")
+        self.var_asen = tk.IntVar(value=st.get("audio_sensitivity", 50))
+        ttk.Scale(row, from_=0, to=100, variable=self.var_asen, length=220,
+                  command=lambda v: self.apply_audio()).pack(side="left", padx=6)
+        row = ttk.Frame(box)
+        row.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Button(row, text="Test (plays a sound)", command=self.test_audio).pack(side="left")
+        ttk.Label(row, text="Feel: 4 thumps on the left, 4 clicks on the right, then a sweep",
+                  foreground="#666").pack(side="left", padx=6)
+        self.lbl_audio = ttk.Label(box, text="", foreground="#666")
+        self.lbl_audio.pack(anchor="w", padx=8, pady=(2, 6))
+
         box = ttk.LabelFrame(opts, text="App")
         box.pack(fill="x", **pad)
         self.var_auto = tk.BooleanVar(value=autostart_enabled())
@@ -282,6 +353,7 @@ class App:
 
         self.apply_light(save=False)
         self.apply_react(save=False)
+        self.apply_audio(save=False)
 
     @staticmethod
     def hex_color(rgb):
@@ -308,6 +380,31 @@ class App:
         if save:
             self.settings["react"] = self.var_react.get()
             save_settings(self.settings)
+
+    def refresh_outputs(self):
+        try:
+            from audio_haptics import list_outputs
+            names = list_outputs()
+        except Exception:
+            names = []
+        self.cmb_adev["values"] = [DEFAULT_OUTPUT] + names
+
+    def audio_device(self):
+        v = self.var_adev.get()
+        return None if v in ("", DEFAULT_OUTPUT) else v
+
+    def apply_audio(self, save=True):
+        self.engine.set_audio(self.var_audio.get(), int(self.var_astr.get()), int(self.var_asen.get()),
+                              self.audio_device(), self.var_ahd.get())
+        if save:
+            self.settings.update(audio=self.var_audio.get(), audio_strength=int(self.var_astr.get()),
+                                 audio_sensitivity=int(self.var_asen.get()),
+                                 audio_device=self.audio_device(), audio_hd=self.var_ahd.get())
+            save_settings(self.settings)
+
+    def test_audio(self):
+        threading.Thread(target=self.engine.start_audio_test,
+                         args=(int(self.var_astr.get()), int(self.var_asen.get())), daemon=True).start()
 
     def save_opts(self):
         self.settings.update(battery_warning=self.var_batt.get(), check_updates=self.var_upd.get())
@@ -382,6 +479,59 @@ class App:
             self.settings["profile"] = key
             save_settings(self.settings)
 
+    # ------------------------------------------------ per game
+
+    def game_rule(self, exe):
+        """(source, profile key or None, xbox on?) for this exe, or None if unknown."""
+        mine = self.settings.get("games", {}).get(exe)
+        if mine:
+            return "yours", mine.get("profile"), mine.get("xbox", True)
+        if exe in self.native:
+            return "native DualSense game", None, False
+        if exe in self.known:
+            return "built-in", self.known[exe], True
+        return None
+
+    def on_game(self, exe):
+        self.game = exe
+        self.btn_remember.config(state="normal")
+        rule = self.game_rule(exe)
+        self.btn_forget.config(state="normal" if exe in self.settings.get("games", {}) else "disabled")
+        if rule is None:
+            self.lbl_game.config(text=f"Game: {exe} (not set up). Pick a profile and Xbox mode, "
+                                      f"then press \"Remember for this game\".")
+            return
+        source, key, xbox = rule
+        if self.var_autogame.get():
+            self.cmb.set(display_name(key) if key in self.games else self.names[0])
+            self.choose_profile()
+            if self.engine.want_xbox != xbox:
+                self.toggle_xbox()
+        prof = display_name(key) if key in self.games else "no profile"
+        mode = "Xbox mode on" if xbox else "Xbox mode off"
+        state = "applied" if self.var_autogame.get() else "auto-switch is off"
+        self.lbl_game.config(text=f"Game: {exe} → {prof}, {mode} ({source}, {state})")
+
+    def remember_game(self):
+        if not self.game:
+            return
+        key = self.name_to_key.get(self.cmb.get())
+        self.settings.setdefault("games", {})[self.game] = {"profile": key, "xbox": bool(self.engine.want_xbox)}
+        save_settings(self.settings)
+        self.on_game(self.game)
+
+    def forget_game(self):
+        if self.game and self.game in self.settings.get("games", {}):
+            del self.settings["games"][self.game]
+            save_settings(self.settings)
+            self.on_game(self.game)
+
+    def save_autogame(self):
+        self.settings["auto_game"] = self.var_autogame.get()
+        save_settings(self.settings)
+        if self.game:
+            self.on_game(self.game)
+
     def toggle_autostart(self):
         if not set_autostart(self.var_auto.get()):
             self.var_auto.set(autostart_enabled())
@@ -421,6 +571,7 @@ class App:
         self.root.focus_force()
 
     def quit(self):
+        self.watcher.stop()
         self.engine.shutdown()
         self.engine.join(timeout=3)
         if self.tray is not None:
@@ -432,6 +583,9 @@ class App:
     def tick(self):
         while not self.q.empty():
             cmd = self.q.get()
+            if isinstance(cmd, tuple) and cmd[0] == "game":
+                self.on_game(cmd[1])
+                continue
             if isinstance(cmd, tuple) and cmd[0] == "update":
                 self.lbl_update.config(text=f"New version {cmd[1]} is available.")
                 self.frm_update.pack(anchor="w", padx=12, pady=(4, 0), before=self.lbl_err)
@@ -477,6 +631,17 @@ class App:
         self.bar_l2["value"] = s["L2"]
         self.bar_r2["value"] = s["R2"]
         live = f"Rumble {s['rumble'][0]} / {s['rumble'][1]}" + ("   ⚡ trigger kick" if s["kick"] else "")
+        if s.get("audio") is not None:
+            live += f"   ♪ sound {s['audio'][0]} / {s['audio'][1]}"
+        if self.var_audio.get() or s.get("audio_error") or s["test"].startswith("Sound test"):
+            msg = s.get("audio_error") or (f"Listening to: {s['audio_device']}" if s.get("audio_device") else "Starting…")
+            if s.get("audio_mode") and not s.get("audio_error"):
+                msg += f"  →  {s['audio_mode']}"
+            if not s["xbox"] and not s["test"]:
+                msg += "  (active when Xbox mode is on)"
+            self.lbl_audio.config(text=msg)
+        else:
+            self.lbl_audio.config(text="")
         if s["test"]:
             live = f"Testing: {s['test']} — press L2 and R2"
         self.lbl_live.config(text=live)

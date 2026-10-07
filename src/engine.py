@@ -59,6 +59,11 @@ class Engine(threading.Thread):
         self.light_color = COLOR_XBOX
         self.brightness = 100             # percent
         self.react = False                # trigger kick on rumble
+        self._audio = None                # AudioHaptics thread while enabled
+        self._audio_wanted = False
+        self._audio_device = None
+        self._audio_hd = False
+        self._audio_test_until = 0.0
         self._test_until = 0.0
         self._test_started = 0.0
 
@@ -67,6 +72,7 @@ class Engine(threading.Thread):
             "connected": False, "name": "", "model": "", "mode": "", "battery": None,
             "charging": "", "xbox": False, "hidden": False, "L2": 0, "R2": 0,
             "rumble": (0, 0), "test": "", "error": "", "vigem": None, "kick": False,
+            "audio": None, "audio_error": "", "audio_device": "", "audio_mode": "",
         }
 
         # internals
@@ -104,6 +110,50 @@ class Engine(threading.Thread):
 
     def set_react(self, on):
         self.react = bool(on)
+
+    def set_audio(self, enabled, strength=100, sensitivity=50, device=None, hd=False):
+        """Sound-to-vibration on/off. Strength 0–200 %, sensitivity 0–100,
+        device = output name to listen to (None = Windows default)."""
+        self._audio_wanted = bool(enabled)
+        self._audio_device = device
+        self._audio_hd = bool(hd)
+        if self._audio is not None and self._audio.device != device:
+            self._audio.stop()                    # listening somewhere else: restart the capture
+            self._audio = None
+        if enabled and self._audio is None:
+            from audio_haptics import AudioHaptics
+            self._audio = AudioHaptics(strength, sensitivity, device)
+            self._audio.start()
+        elif not enabled and self._audio is not None and time.time() > self._audio_test_until:
+            self._audio.stop()
+            self._audio = None
+        if self._audio is not None:
+            self._audio.strength, self._audio.sensitivity = strength, sensitivity
+
+    def start_audio_test(self, strength=100, sensitivity=50):
+        """Plays a test sound and feeds it to the controller, even with the feature off or Xbox mode off."""
+        try:
+            self._start_audio_test(strength, sensitivity)
+        except Exception as e:
+            self._set(error=f"Sound test failed: {e}")
+
+    def _start_audio_test(self, strength, sensitivity):
+        if not self.status["connected"]:
+            self._set(error="Sound test: connect the controller first.")
+            return
+        self._set(error="")
+        if self._audio is None:
+            from audio_haptics import AudioHaptics
+            self._audio = AudioHaptics(strength, sensitivity, self._audio_device)
+            self._audio.start()
+            for _ in range(20):                   # let the capture open before the sound starts
+                if self._audio.device_name or self._audio.error or not self._audio.is_alive():
+                    break
+                time.sleep(0.1)
+            if self._audio.error:
+                raise RuntimeError(self._audio.error)
+        from audio_haptics import play_test_sound
+        self._audio_test_until = time.time() + play_test_sound(self._audio_device) + 0.3
 
     def start_test(self):
         self._test_started = time.time()
@@ -250,16 +300,43 @@ class Engine(threading.Thread):
         self._update_kick(now)
         l2, r2, test_name = self._triggers(now)
         large, small = (self._rumble if self._pad is not None else (0, 0))
+        audio = None
+        hd = False
+        audio_mode = ""
+        testing_audio = now < self._audio_test_until
+        if self._audio is not None and not testing_audio and not self._audio_wanted:
+            self._audio.stop()                    # test is over and the feature is off
+            self._audio = None
+        if self._audio is not None:
+            feeding = self._pad is not None or testing_audio
+            # HD haptics: DualSense over USB only (its speaker device exists only on USB)
+            self._audio.hd_wanted = (self._audio_hd and feeding and self._model == "dualsense"
+                                     and not bluetooth)
+            hd = self._audio.hd_active and self._audio.hd_wanted
+            if hd:
+                self._audio.game_rumble = (large, small)   # played as tones through the actuators
+                large = small = 0
+                audio_mode = "HD haptics"
+            elif feeding:
+                audio = self._audio.levels()
+                # game rumble and sound vibration together; steps of 4 keep the write rate sane
+                large = max(large, audio[0]) & ~3
+                small = max(small, audio[1]) & ~3
+                audio_mode = "rumble motors"
         light = self._light()
-        want = (large, small, bluetooth, l2, r2, light)
+        want = (large, small, bluetooth, l2, r2, light, hd)
         if want != self._sent or self._need_setup:
             self._device.write(self._out.report(large, small, bluetooth, l2=l2, r2=r2, light=light,
-                                                setup=self._need_setup, model=self._model))
+                                                setup=self._need_setup, model=self._model, hd=hd))
             self._sent = want
             self._need_setup = False
             if l2 is not None and self._pad is None and now >= self._test_until:
                 self._reset_triggers = False
-        self._set(rumble=(large, small), test=test_name, kick=now < self._kick_until)
+        if testing_audio:
+            test_name = "Sound test: thumps (left) → clicks (right) → sweep"
+        self._set(rumble=(large, small), test=test_name, kick=now < self._kick_until, audio=audio,
+                  audio_error=self._audio.error if self._audio else "",
+                  audio_device=self._audio.device_name if self._audio else "", audio_mode=audio_mode)
 
     # ------------------------------------------------------------ thread
 
@@ -320,6 +397,8 @@ class Engine(threading.Thread):
             self._set(mode=mode, L2=d["L2"], R2=d["R2"],
                       battery=self._battery, charging=self._charging)
 
+        if self._audio is not None:
+            self._audio.stop()
         # leaving: triggers back to normal, default blue light, pad removed, hiding off
         try:
             if self._device is not None and self._sent is not None:

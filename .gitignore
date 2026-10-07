@@ -12,3 +12,10 @@ commit_message.txt
 vendor/
 update_*.tgz
 gi_add.txt
+build_log.txt
+.rebuild
+build_status.txt
+scripts/dev_run.bat
+diag_out.txt
+.rundiag
+*.tgz
