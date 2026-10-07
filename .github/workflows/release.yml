@@ -34,7 +34,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path vendor | Out-Null
           Move-Item vgamepad-0.1.0/vgamepad vendor/vgamepad
           "PYTHONPATH=$PWD\vendor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          python -c "import sys; sys.path.insert(0, 'vendor'); import vgamepad.win.vigem_commons; print('vgamepad unpacked')"
+          # (importing vgamepad here would fail: it connects to the ViGEmBus driver on import,
+          # and the runner has no driver. The exe connects at runtime on the user's PC.)
+          if (-not (Test-Path vendor/vgamepad/win/vigem/client/x64/ViGEmClient.dll)) { throw "vgamepad unpack failed" }
+          Write-Host "vgamepad unpacked"
 
       - name: Build exe
         run: >
@@ -42,7 +45,9 @@ jobs:
           --name DualSenseBridge --icon assets/icon.ico
           --add-data "profiles.json;." --add-data "assets/icon.ico;assets"
           --paths src --paths vendor
-          --collect-submodules vgamepad
+          --hidden-import vgamepad --hidden-import vgamepad.win
+          --hidden-import vgamepad.win.virtual_gamepad --hidden-import vgamepad.win.vigem_client
+          --hidden-import vgamepad.win.vigem_commons
           --add-binary "vendor/vgamepad/win/vigem/client/x64/ViGEmClient.dll;vgamepad/win/vigem/client/x64"
           --hidden-import pystray._win32
           src/app.py
