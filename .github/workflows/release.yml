@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -19,17 +20,32 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install hidapi pystray pillow pyinstaller
+          # vgamepad only ships as source, and its setup.py launches the ViGEmBus installer
+          # and waits for it - that hangs forever on a headless runner. The package itself is
+          # plain Python + ViGEmClient.dll, so unpack it into vendor/ instead of installing it.
+          $info = Invoke-RestMethod https://pypi.org/pypi/vgamepad/0.1.0/json
+          $sdist = ($info.urls | Where-Object packagetype -eq "sdist").url
+          Invoke-WebRequest $sdist -OutFile vgamepad.tar.gz
+          tar -xzf vgamepad.tar.gz
+          New-Item -ItemType Directory -Force -Path vendor | Out-Null
+          Move-Item vgamepad-0.1.0/vgamepad vendor/vgamepad
+          "PYTHONPATH=$PWD\vendor" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          python -c "import sys; sys.path.insert(0, 'vendor'); import vgamepad.win.vigem_commons; print('vgamepad unpacked')"
 
       - name: Build exe
         run: >
           pyinstaller --noconfirm --clean --onefile --windowed --uac-admin
           --name DualSenseBridge --icon assets/icon.ico
           --add-data "profiles.json;." --add-data "assets/icon.ico;assets"
-          --collect-all vgamepad --hidden-import pystray._win32
-          --paths src src/app.py
+          --paths src --paths vendor
+          --collect-submodules vgamepad
+          --add-binary "vendor/vgamepad/win/vigem/client/x64/ViGEmClient.dll;vgamepad/win/vigem/client/x64"
+          --hidden-import pystray._win32
+          src/app.py
 
       - name: Download driver installers
         shell: pwsh

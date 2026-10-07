@@ -8,3 +8,7 @@ dist/
 *.log
 
 push_to_github.bat
+commit_message.txt
+vendor/
+update_*.tgz
+gi_add.txt
