@@ -101,6 +101,10 @@ def _parse_full(r, offset):
         "L2": r[o + 4], "R2": r[o + 5],
     }
     state.update(_parse_buttons(r[o + 7], r[o + 8], r[o + 9]))
+    if len(r) > o + 20:
+        state["Gyro"] = _gyro(r, o + 15)    # pitch, yaw, roll (raw, about 16.4 per degree/s)
+    if len(r) > o + 32:
+        state["Touching"] = not r[o + 32] & 0x80   # first touch point: bit 7 set = no finger
     if len(r) > o + 52:
         b = r[o + 52]                       # report[53] on USB
         level = b & 0x0F
@@ -134,11 +138,19 @@ def _parse_ds4(r, bus_hint):
              "L2": r[o + 7], "R2": r[o + 8]}
     state.update(_parse_buttons(r[o + 4], r[o + 5], r[o + 6]))
     state["Mute"] = False                    # DS4 has no mute button (those bits are a counter)
+    state["Gyro"] = _gyro(r, o + 12)
+    if len(r) > o + 32:
+        state["Touching"] = not r[o + 32] & 0x80
     b = r[o + 29]
     level, cable = b & 0x0F, bool(b & 0x10)
     state["Battery"] = min(level * 10 + 5, 100)
     state["Charging"] = ("full" if level >= 10 else "charging") if cable else "no"
     return mode, state
+
+
+def _gyro(r, at):
+    """Three signed little-endian 16-bit values: pitch, yaw, roll angular speed."""
+    return tuple(int.from_bytes(bytes(r[at + 2 * i:at + 2 * i + 2]), "little", signed=True) for i in range(3))
 
 
 def _parse_buttons(b0, b1, b2):

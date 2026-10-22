@@ -188,6 +188,8 @@ def bt_crc(report_without_crc):
 
 
 FLAG1_LIGHTBAR = 0x04            # light bar color below is valid
+FLAG1_MOTOR_POWER = 0x40         # motor power level below is valid
+OFF_MOTOR_POWER = 36             # low nibble triggers, high nibble rumble/haptics: 0 = full, 1 step = -12.5 %
 FLAG2_LIGHTBAR_SETUP = 0x02      # lightbar_setup below is valid
 LIGHTBAR_SETUP_LIGHT_OUT = 0x02  # stop the blue startup animation so our color shows
 OFF_FLAG2 = 38
@@ -205,7 +207,7 @@ class Output:
         self.seq = 0
 
     def report(self, large, small, bluetooth, l2=None, r2=None, light=None, setup=False,
-               model="dualsense", hd=False):
+               model="dualsense", hd=False, full_power=False):
         """Rumble always. Trigger effects and light bar color only when given
         (the controller keeps them until changed). `setup` ends the DualSense's
         own startup light animation; send it once after connecting."""
@@ -228,6 +230,11 @@ class Output:
         if light is not None:
             c[1] |= FLAG1_LIGHTBAR
             c[OFF_LIGHT_R], c[OFF_LIGHT_G], c[OFF_LIGHT_B] = (int(x) & 0xFF for x in light)
+        if full_power:
+            # Bluetooth HD haptics: without this the controller may keep a reduced power level
+            # from another program (seen as actuators at 12.5 %)
+            c[1] |= FLAG1_MOTOR_POWER
+            c[OFF_MOTOR_POWER] = 0
         if setup:
             c[OFF_FLAG2] |= FLAG2_LIGHTBAR_SETUP
             c[OFF_LIGHTBAR_SETUP] = LIGHTBAR_SETUP_LIGHT_OUT

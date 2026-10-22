@@ -17,6 +17,8 @@ import hid
 
 from dualsense_reader import find_controller, bus_type, parse_report, enable_full_mode, BT_REPORT_LEN
 from hiding import Hiding, find_cli, _cli
+from gyro import GyroAim
+from mapping import Mapping
 from output import (Output, effect_off, effect_weapon, effect_vibration, effect_slope,
                     effect_bow, effect_machine, effect_galloping)
 
@@ -66,6 +68,9 @@ class Engine(threading.Thread):
         self._audio_test_until = 0.0
         self._test_until = 0.0
         self._test_started = 0.0
+        self._preview = None              # (l2, r2) from the profile editor, works in any mode
+        self.mapping = Mapping()          # remapping + deadzones (Controls tab)
+        self.gyro = GyroAim()             # gyro aiming → right stick (Controls tab)
 
         # status read by the UI
         self.status = {
@@ -73,6 +78,8 @@ class Engine(threading.Thread):
             "charging": "", "xbox": False, "hidden": False, "L2": 0, "R2": 0,
             "rumble": (0, 0), "test": "", "error": "", "vigem": None, "kick": False,
             "audio": None, "audio_error": "", "audio_device": "", "audio_mode": "",
+            "sticks": (128, 128, 128, 128),
+            "gyro": {"has": False, "active": False, "calibrating": False, "rates": (0, 0, 0), "out": (0, 0)},
         }
 
         # internals
@@ -107,6 +114,16 @@ class Engine(threading.Thread):
             self.light_color = tuple(int(c) for c in color)
         if brightness is not None:
             self.brightness = max(0, min(100, int(brightness)))
+
+    def set_mapping(self, cfg):
+        """Controls tab: remapping and deadzones (dict as stored in settings)."""
+        self.mapping = Mapping(cfg)
+
+    def set_gyro(self, cfg):
+        self.gyro.configure(cfg)
+
+    def calibrate_gyro(self):
+        self.gyro.calibrate()
 
     def set_react(self, on):
         self.react = bool(on)
@@ -154,6 +171,15 @@ class Engine(threading.Thread):
                 raise RuntimeError(self._audio.error)
         from audio_haptics import play_test_sound
         self._audio_test_until = time.time() + play_test_sound(self._audio_device) + 0.3
+
+    def set_preview(self, l2, r2):
+        """Profile editor: feel these effects now, with Xbox mode on or off."""
+        self._preview = (l2, r2)
+
+    def clear_preview(self):
+        if self._preview is not None:
+            self._preview = None
+            self._reset_triggers = True      # give the triggers back once
 
     def start_test(self):
         self._test_started = time.time()
@@ -275,6 +301,9 @@ class Engine(threading.Thread):
             name, effect = TEST_STEPS[i]
             self._reset_triggers = True      # reset after the test
             return effect, effect, name
+        preview = self._preview
+        if preview is not None:
+            return preview[0], preview[1], "Profile editor preview"
         if self._pad is not None:
             if now < self._kick_until:
                 return self._kick[0], self._kick[1], ""
@@ -309,14 +338,20 @@ class Engine(threading.Thread):
             self._audio = None
         if self._audio is not None:
             feeding = self._pad is not None or testing_audio
-            # HD haptics: DualSense over USB only (its speaker device exists only on USB)
-            self._audio.hd_wanted = (self._audio_hd and feeding and self._model == "dualsense"
-                                     and not bluetooth)
-            hd = self._audio.hd_active and self._audio.hd_wanted
+            # HD haptics: USB through the DualSense speaker device, Bluetooth through report 0x32
+            hd_ok = self._audio_hd and feeding and self._model == "dualsense"
+            self._audio.hd_wanted = hd_ok and not bluetooth
+            self._audio.bt_wanted = hd_ok and bluetooth     # experimental: report 0x32
+            bt_hd = bluetooth and self._audio.bt_active
+            hd = (self._audio.hd_active and self._audio.hd_wanted) or bt_hd
             if hd:
-                self._audio.game_rumble = (large, small)   # played as tones through the actuators
+                # game rumble is played as tones through the actuators
+                if bt_hd:
+                    self._audio.bt.game_rumble = (large, small)
+                else:
+                    self._audio.game_rumble = (large, small)
                 large = small = 0
-                audio_mode = "HD haptics"
+                audio_mode = "HD haptics (Bluetooth, experimental)" if bt_hd else "HD haptics"
             elif feeding:
                 audio = self._audio.levels()
                 # game rumble and sound vibration together; steps of 4 keep the write rate sane
@@ -324,14 +359,21 @@ class Engine(threading.Thread):
                 small = max(small, audio[1]) & ~3
                 audio_mode = "rumble motors"
         light = self._light()
+        bt_hd = hd and bluetooth
         want = (large, small, bluetooth, l2, r2, light, hd)
         if want != self._sent or self._need_setup:
             self._device.write(self._out.report(large, small, bluetooth, l2=l2, r2=r2, light=light,
-                                                setup=self._need_setup, model=self._model, hd=hd))
+                                                setup=self._need_setup, model=self._model, hd=hd,
+                                                full_power=bt_hd))
             self._sent = want
             self._need_setup = False
-            if l2 is not None and self._pad is None and now >= self._test_until:
+            if (l2 is not None and self._pad is None and now >= self._test_until
+                    and self._preview is None):
                 self._reset_triggers = False
+        if bt_hd:
+            haptic = self._audio.bt.next_report(time.monotonic())
+            if haptic is not None:
+                self._device.write(haptic)       # same thread as every other write
         if testing_audio:
             test_name = "Sound test: thumps (left) → clicks (right) → sweep"
         self._set(rumble=(large, small), test=test_name, kick=now < self._kick_until, audio=audio,
@@ -387,14 +429,18 @@ class Engine(threading.Thread):
                 self._xbox_off()
 
             try:
+                add = self.gyro.update(d)           # always, so drift correction keeps learning
                 if self._pad is not None:
-                    write_virtual(self._pad, d)
+                    write_virtual(self._pad, d, self.mapping, add)
                 self._send_output(mode.startswith("Bluetooth"))
             except (OSError, IOError, ValueError):
                 self._disconnect()
                 continue
 
-            self._set(mode=mode, L2=d["L2"], R2=d["R2"],
+            g = self.gyro
+            self._set(gyro={"has": "Gyro" in d, "active": g.active and self._pad is not None,
+                            "calibrating": g.calibrating, "rates": g.rates, "out": add})
+            self._set(mode=mode, L2=d["L2"], R2=d["R2"], sticks=(d["LX"], d["LY"], d["RX"], d["RY"]),
                       battery=self._battery, charging=self._charging)
 
         if self._audio is not None:

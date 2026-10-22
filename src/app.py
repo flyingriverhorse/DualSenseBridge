@@ -29,6 +29,7 @@ LOW_BATTERY = 15
 DEFAULT_OUTPUT = "Windows default speakers"
 SETTINGS_DIR = os.path.join(os.environ.get("APPDATA", HERE), "DualSenseBridge")
 SETTINGS_FILE = os.path.join(SETTINGS_DIR, "settings.json")
+USER_PROFILES = os.path.join(SETTINGS_DIR, "my_profiles.json")   # made in the profile editor
 NO_WINDOW = 0x08000000
 
 
@@ -109,10 +110,20 @@ def display_name(key):
 
 
 def load_profiles():
+    """Built-in profiles plus the user's own (their keys start with my_, listed first)."""
     from bridge_profiles import read_profiles, resolve_profile
-    profiles = read_profiles()
-    games = sorted((k for k in profiles if not k.startswith("_") and k != "off"), key=display_name)
+    import profile_editor
+    profiles = profile_editor.merge(read_profiles(), profile_editor.load_user(USER_PROFILES))
+    games = sorted((k for k in profiles if not k.startswith("_") and k != "off"),
+                   key=lambda k: (not profiles[k].get("_user"), profile_label(profiles, k).lower()))
     return profiles, games, resolve_profile
+
+
+def profile_label(profiles, key):
+    entry = profiles.get(key, {})
+    if entry.get("_user"):
+        return "★ " + entry.get("_name", key)
+    return display_name(key)
 
 
 # ---------------------------------------------------------------- tray icon
@@ -154,10 +165,10 @@ class App:
 
         nb = ttk.Notebook(root)
         nb.pack(fill="both", expand=True, padx=6, pady=(6, 0))
+        self.nb = nb
         main = ttk.Frame(nb)
         opts = ttk.Frame(nb)
         nb.add(main, text="Controller")
-        nb.add(opts, text="Settings")
 
         # controller status
         box = ttk.LabelFrame(main, text="Controller")
@@ -181,9 +192,9 @@ class App:
         self.box_prof = box
         box.pack(fill="x", **pad)
         self.profiles, self.games, self.resolve = load_profiles()
-        self.names = ["None (normal triggers)"] + [display_name(g) for g in self.games]
-        self.name_to_key = {display_name(g): g for g in self.games}
-        self.cmb = ttk.Combobox(box, values=self.names, width=40)
+        self.names, self.name_to_key = [], {}
+        self.cmb = ttk.Combobox(box, width=40)
+        self.set_profile_names()
         self.cmb.pack(padx=8, pady=(8, 2))
         self.cmb.bind("<<ComboboxSelected>>", lambda e: self.choose_profile())
         self.cmb.bind("<KeyRelease>", self.filter_profiles)
@@ -225,6 +236,21 @@ class App:
         self.lbl_live = ttk.Label(box, text="")
         self.lbl_live.pack(anchor="w", padx=8, pady=(0, 6))
 
+        from editor_tab import EditorTab
+        self.game = None                       # last game exe seen in the foreground
+        self.editor = EditorTab(nb, engine, lambda: self.profiles, self.label, USER_PROFILES,
+                                self.profiles_saved, lambda: self.game)
+        nb.add(self.editor, text="Profile editor")
+        from controls_tab import ControlsTab
+        self.controls = ControlsTab(nb, self.settings.get("controls"), self.apply_controls)
+        nb.add(self.controls, text="Controls")
+        engine.set_mapping(self.settings.get("controls"))
+        from gyro_tab import GyroTab
+        self.gyro = GyroTab(nb, self.settings.get("gyro"), self.apply_gyro, engine.calibrate_gyro)
+        nb.add(self.gyro, text="Gyro")
+        engine.set_gyro(self.settings.get("gyro"))
+        nb.add(opts, text="Settings")
+        nb.bind("<<NotebookTabChanged>>", self.tab_changed)
         self.build_settings(opts, pad)
 
         # update notice + errors (below the tabs)
@@ -242,14 +268,15 @@ class App:
 
         # restore last session
         last = self.settings.get("profile")
-        self.cmb.set(display_name(last) if last in self.games else self.names[0])
+        self.cmb.set(self.label(last) if last in self.games else self.names[0])
         self.choose_profile(save=False)
+        if last in self.profiles:
+            self.editor.load(last)
         self.engine.set_xbox(self.settings.get("xbox", False))
 
         from game_watch import GameWatcher, known_games
         self.known = known_games(self.profiles)
         self.native = {e.lower() for e in self.profiles.get("_native_exe", {}).get("list", [])}
-        self.game = None                       # last game exe seen in the foreground
         self.watcher = GameWatcher(lambda exe: self.q.put(("game", exe)))
         self.watcher.start()
 
@@ -303,11 +330,11 @@ class App:
         row.pack(fill="x", padx=8, pady=(4, 0))
         ttk.Label(row, text="Feel it as", width=11).pack(side="left")
         self.var_ahd = tk.BooleanVar(value=st.get("audio_hd", True))
-        ttk.Radiobutton(row, text="HD haptics (DualSense on USB)", value=True, variable=self.var_ahd,
+        ttk.Radiobutton(row, text="HD haptics (DualSense)", value=True, variable=self.var_ahd,
                         command=self.apply_audio).pack(side="left", padx=(6, 0))
         ttk.Radiobutton(row, text="Rumble motors", value=False, variable=self.var_ahd,
                         command=self.apply_audio).pack(side="left", padx=6)
-        ttk.Label(box, text="HD haptics fall back to the motors over Bluetooth.", foreground="#666"
+        ttk.Label(box, text="HD haptics over Bluetooth are experimental: if you feel nothing, use the motors.", foreground="#666"
                   ).pack(anchor="w", padx=26)
         row = ttk.Frame(box)
         row.pack(fill="x", padx=8, pady=(4, 0))
@@ -440,6 +467,47 @@ class App:
                 except Exception:
                     pass
 
+    # ------------------------------------------------ profiles
+
+    def label(self, key):
+        return profile_label(self.profiles, key)
+
+    def set_profile_names(self):
+        self.names = ["None (normal triggers)"] + [self.label(g) for g in self.games]
+        self.name_to_key = {self.label(g): g for g in self.games}
+        self.cmb["values"] = self.names
+
+    def profiles_saved(self, key):
+        """The editor saved (key) or deleted (None) one of the user's profiles."""
+        current = self.name_to_key.get(self.cmb.get())
+        self.profiles, self.games, self.resolve = load_profiles()
+        from game_watch import known_games
+        self.known = known_games(self.profiles)
+        self.set_profile_names()
+        pick = key if key else (current if current in self.games else None)
+        self.cmb.set(self.label(pick) if pick else self.names[0])
+        self.choose_profile()
+        exes = self.profiles.get(key, {}).get("_exe", []) if key else []
+        remembered = self.settings.get("games", {})
+        if any(remembered.pop(exe, None) for exe in exes):
+            save_settings(self.settings)        # the new profile replaces "Remember for this game"
+        if self.game and self.game in exes:
+            self.on_game(self.game)             # the game in front just got this profile
+
+    def apply_controls(self, cfg):
+        self.engine.set_mapping(cfg)
+        self.settings["controls"] = cfg
+        save_settings(self.settings)
+
+    def apply_gyro(self, cfg):
+        self.engine.set_gyro(cfg)
+        self.settings["gyro"] = cfg
+        save_settings(self.settings)
+
+    def tab_changed(self, event=None):
+        if self.nb.select() != str(self.editor):
+            self.editor.stop_preview()          # never leave a preview running during a game
+
     # ------------------------------------------------ actions
 
     def toggle_xbox(self):
@@ -486,6 +554,10 @@ class App:
         mine = self.settings.get("games", {}).get(exe)
         if mine:
             return "yours", mine.get("profile"), mine.get("xbox", True)
+        from profile_editor import user_games
+        made = user_games(self.profiles).get(exe)
+        if made:
+            return "your profile", made, True
         if exe in self.native:
             return "native DualSense game", None, False
         if exe in self.known:
@@ -503,11 +575,11 @@ class App:
             return
         source, key, xbox = rule
         if self.var_autogame.get():
-            self.cmb.set(display_name(key) if key in self.games else self.names[0])
+            self.cmb.set(self.label(key) if key in self.games else self.names[0])
             self.choose_profile()
             if self.engine.want_xbox != xbox:
                 self.toggle_xbox()
-        prof = display_name(key) if key in self.games else "no profile"
+        prof = self.label(key) if key in self.games else "no profile"
         mode = "Xbox mode on" if xbox else "Xbox mode off"
         state = "applied" if self.var_autogame.get() else "auto-switch is off"
         self.lbl_game.config(text=f"Game: {exe} → {prof}, {mode} ({source}, {state})")
@@ -557,6 +629,7 @@ class App:
         if self.tray is None:
             self.quit()
             return
+        self.editor.stop_preview()
         self.root.withdraw()
         if not self.tray_tip_shown:
             self.tray_tip_shown = True
@@ -630,6 +703,10 @@ class App:
 
         self.bar_l2["value"] = s["L2"]
         self.bar_r2["value"] = s["R2"]
+        self.editor.update_live(s["L2"], s["R2"], s["model"], s["connected"])
+        self.controls.update_live(s["sticks"], s["L2"], s["R2"])
+        if self.nb.select() == str(self.gyro):
+            self.gyro.update_live(s["gyro"], s["connected"], s["xbox"])
         live = f"Rumble {s['rumble'][0]} / {s['rumble'][1]}" + ("   ⚡ trigger kick" if s["kick"] else "")
         if s.get("audio") is not None:
             live += f"   ♪ sound {s['audio'][0]} / {s['audio'][1]}"

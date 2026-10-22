@@ -7,6 +7,8 @@ Two ways to feel it:
   audio channels 3-4, which drive the haptic actuators directly. The controller only
   accepts this while the HID "haptics select" flag is off (see output.py, hd=True);
   game rumble is then mixed in as low sine tones.
+- HD haptics over Bluetooth (experimental): the same signal at 3 kHz, streamed in HID
+  report 0x32 by the engine (bt_haptics.py).
 
 How: WASAPI loopback of the default speakers (PyAudioWPatch) → every ~10 ms an
 FFT of the block → bass energy (20-160 Hz) drives the large/left motor, treble
@@ -121,12 +123,21 @@ class AudioHaptics(threading.Thread):
         self._hd_taps = _lowpass_taps(HD_RATE, HD_LOWPASS_HZ)
         self._hd_tail = np.zeros((len(self._hd_taps) - 1, 2), dtype=np.float32)
         self._phase = [0.0, 0.0]
+        # HD haptics over Bluetooth: filled here, sent by the engine thread
+        from bt_haptics import BtHapticStream
+        self.bt = BtHapticStream()
+        self.bt_wanted = False            # set by the engine (DualSense on Bluetooth + HD chosen)
 
     # ------------------------------------------------ public
 
+    @property
+    def bt_active(self):
+        """True while sound is being captured for Bluetooth HD haptics."""
+        return self.bt_wanted and bool(self.device_name) and not self.error
+
     def levels(self):
         """(large, small) motor values 0–255 right now (0 while HD haptics carry the sound)."""
-        if self.hd_active:
+        if self.hd_active or self.bt_active:
             return 0, 0
         with self._lock:
             if time.time() - self._last_data > STALE_SECONDS:
@@ -208,6 +219,12 @@ class AudioHaptics(threading.Thread):
             if len(self._hd_buf) > limit:
                 self._hd_buf = self._hd_buf[-limit:]
 
+    def _shape(self, stereo):
+        """Noise gate + gain + soft limit, as for USB HD haptics (filtering happens later)."""
+        gate = max(self._env)                               # quiet background → no haptics
+        y = stereo * min(1.0, gate * 4)
+        return np.tanh(y * 3.0 * self.strength / 100)
+
     def _hd_pull(self, n):
         with self._lock:
             take = self._hd_buf[:n]
@@ -255,9 +272,12 @@ class AudioHaptics(threading.Thread):
             x = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
             x = x.reshape(-1, channels)
             self._process(x.mean(axis=1))
-            if hd_stream is not None:
+            if hd_stream is not None or self.bt_wanted:
                 stereo = x[:, :2] if channels >= 2 else np.repeat(x, 2, axis=1)
-                self._hd_push(stereo, rate)
+                if hd_stream is not None:
+                    self._hd_push(stereo, rate)
+                if self.bt_wanted:
+                    self.bt.push(self._shape(stereo), rate)
             return (None, pyaudio.paContinue)
 
         try:

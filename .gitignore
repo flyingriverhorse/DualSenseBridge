@@ -19,3 +19,4 @@ scripts/dev_run.bat
 diag_out.txt
 .rundiag
 *.tgz
+build_ok.txt

@@ -74,14 +74,13 @@ def xbox_buttons(d):
     return mask
 
 
-def write_virtual(pad, d):
-    pad.report.wButtons = xbox_buttons(d)
-    pad.report.bLeftTrigger = d["L2"]
-    pad.report.bRightTrigger = d["R2"]
-    pad.report.sThumbLX = axis(d["LX"])
-    pad.report.sThumbLY = axis(d["LY"], invert=True)
-    pad.report.sThumbRX = axis(d["RX"])
-    pad.report.sThumbRY = axis(d["RY"], invert=True)
+def write_virtual(pad, d, mapping=None, add_right=None):
+    """Controller state → virtual pad. `mapping` (mapping.Mapping) adds remapping and deadzones;
+    without it the plain 1:1 mapping is used."""
+    from mapping import DEFAULT
+    r = pad.report
+    (r.wButtons, r.bLeftTrigger, r.bRightTrigger,
+     r.sThumbLX, r.sThumbLY, r.sThumbRX, r.sThumbRY) = (mapping or DEFAULT).apply(d, add_right)
     pad.update()
 
 

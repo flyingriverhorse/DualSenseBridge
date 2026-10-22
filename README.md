@@ -1,6 +1,6 @@
 # DualSense Bridge
 
-A small, free Windows app that makes a **PS5 DualSense** (or **PS4 DualShock 4**) controller show up as an **Xbox 360 controller**, over **USB or Bluetooth**, with **HD haptics on PC**, sound-to-vibration and adaptive-trigger profiles. An open-source alternative to DS4Windows and DSX.
+A small, free Windows app that makes a **PS5 DualSense** (or **PS4 DualShock 4**) controller show up as an **Xbox 360 controller**, over **USB or Bluetooth**, with **HD haptics on PC**, sound-to-vibration, adaptive-trigger profiles you can make yourself, gyro aiming and button remapping. An open-source alternative to DS4Windows and DSX.
 
 <p align="center"><img src="docs/demo.gif" alt="DualSense Bridge window: Xbox mode on, Silent Hill f profile, live trigger values" width="420"></p>
 
@@ -9,9 +9,12 @@ A small, free Windows app that makes a **PS5 DualSense** (or **PS4 DualShock 4**
 - **No double input**: the real DualSense is hidden from games while Xbox mode is on ([HidHide](https://github.com/nefarius/HidHide))
 - **One click to switch back**: turn Xbox mode off and the DualSense is a normal DualSense again, with full native support in games like Silent Hill 2 or Sony's PC ports
 - **Trigger profiles (experimental)**: adaptive-trigger feel (resistance, weapon click, buzz) for 50+ games, with several feel presets
+- **Profile editor**: build your own L2 / R2 effects with sliders and feel every change on the controller live; save them for any game, including games that are not on the list
+- **Gyro aiming**: turn the controller to aim (moves the right stick, so it works in any Xbox game), while L2 is held or always
+- **Controls**: stick and trigger deadzones (stick drift), and remap any button (e.g. Touchpad → Back)
 - **Sound to vibration (experimental)**: feel the game's audio.
-  - **HD haptics** (DualSense over USB): the sound itself drives the DualSense's haptic actuators, like on a PS5; the game's rumble is mixed in.
-  - **Rumble motors** (USB and Bluetooth): bass on the left motor, high sounds on the right. HD mode falls back to this over Bluetooth.
+  - **HD haptics** (DualSense over USB, and over Bluetooth as an experiment): the sound itself drives the DualSense's haptic actuators, like on a PS5; the game's rumble is mixed in.
+  - **Rumble motors** (USB and Bluetooth): bass on the left motor, high sounds on the right.
   - Pick which speakers/headphones to listen to (e.g. SteelSeries Sonar), with a built-in test sound
 - **Trigger kick**: optional short kick in the triggers when the game rumbles (shots, hits)
 - **Light bar**: automatic color by mode (green = Xbox mode, blue = off, red = low battery), your own color, or off
@@ -19,9 +22,13 @@ A small, free Windows app that makes a **PS5 DualSense** (or **PS4 DualShock 4**
 - **Automatic per game**: when a game comes to the front, its trigger profile and Xbox mode switch on their own (built-in list for many games; "Remember for this game" for the rest). Native DualSense games switch Xbox mode off
 - Auto-reconnect, battery level and low-battery warning, tray icon, start with Windows, update check
 
-| Controller tab | Settings tab |
+| Controller | Profile editor | Controls |
+| --- | --- | --- |
+| ![Controller tab](docs/screenshot-controller.png) | ![Profile editor tab](docs/screenshot-editor.png) | ![Controls tab](docs/screenshot-controls.png) |
+
+| Gyro | Settings |
 | --- | --- |
-| ![Controller tab](docs/screenshot-controller.png) | ![Settings tab](docs/screenshot-settings.png) |
+| ![Gyro tab](docs/screenshot-gyro.png) | ![Settings tab](docs/screenshot-settings.png) |
 
 ![How it works](docs/how-it-works.svg)
 
@@ -65,6 +72,18 @@ Start **DualSense Bridge** from the Start menu or desktop shortcut and accept th
 | **Per game** | Shows the game in front. With auto-switch on, its profile and Xbox mode are applied automatically. **Remember for this game** saves the current profile + Xbox mode for it; **Forget** removes that. |
 | **Live** | Trigger values and the rumble the game is sending. |
 
+The **Profile editor** tab builds trigger effects:
+
+1. **Start from** any profile (or *off*), pick a mode for L2 and R2, move the sliders. The 10-zone strip shows where the trigger resists (blue), buzzes (orange) or clicks (red); the black line is where your trigger is.
+2. Tick **Feel it on the controller now** to feel each change as you make it (works with Xbox mode off too; it stops when you leave the tab).
+3. Give it a **Name**, optionally the **Game .exe** (**Browse…**, or start the game and press **Game in front**), and **Save as my profile**. With the .exe, the profile and Xbox mode switch on by themselves when that game starts, also for games that are not in the built-in list.
+
+Your profiles (★ in the list) are kept in `%APPDATA%\DualSenseBridge\my_profiles.json`, so updates never overwrite them. **Copy JSON** gives you the profile as text to share in an issue.
+
+The **Controls** tab (Xbox mode): deadzone per stick (the picture shows the raw position in grey and what games get in green), trigger deadzone and where a full press is reached, and a target for every button (any Xbox button, LT/RT full press, or nothing). The defaults change nothing.
+
+The **Gyro** tab (Xbox mode): turn the controller to move the right stick. Choose when it is active (while L2 is held, always, while L1 is held, while touching the touchpad), turning or leaning, inverting, and the feel: *Full stick at* (lower = more sensitive), *Ignore below* (stops jitter) and *Skip game deadzone* (most games ignore the first ~20 % of the stick). Drift is corrected while the controller rests; **Calibrate** does it at once (lay it flat and still).
+
 The **Settings** tab has the light bar (automatic / your color / off, brightness), the trigger kick, sound to vibration (HD haptics or motors, which output to listen to, strength, sensitivity, test sound), start with Windows, the low-battery warning and the update check.
 
 Closing the window keeps the app in the **tray**. Right-click the tray icon to toggle Xbox mode or quit. The icon is green when Xbox mode is on, grey when off and red when no controller is connected.
@@ -73,7 +92,7 @@ Closing the window keeps the app in the **tray**. Right-click the tray icon to t
 
 ## Trigger profiles (experimental)
 
-> **These profiles are first guesses.** They are based on each game's default controls and have not been tested in every game. If a profile feels wrong, edit `profiles.json` and please send a pull request.
+> **These profiles are first guesses.** They are based on each game's default controls and have not been tested in every game. If a profile feels wrong, tune it in the **Profile editor**, then **Copy JSON** and send it in an issue or a pull request.
 
 Profiles live in [`profiles.json`](profiles.json). Each game points to a shared **preset** and can override L2 or R2:
 
@@ -136,13 +155,19 @@ Open **Win+R → `joy.cpl`** (or the **Open joy.cpl** button):
 | Create / Options / PS | Back / Start / Guide |
 | L3 / R3 | Left / right stick click |
 | D-pad | D-pad |
-| Touchpad, Mute | not mapped |
+| Touchpad, Mute | not mapped (set them in the **Controls** tab) |
+
+Every button can be remapped in the **Controls** tab.
 
 ## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
-| HD haptics selected but it says "rumble motors" | HD haptics need the DualSense on a **USB data cable** (Windows only creates the controller's audio device over USB). Over Bluetooth the motors are used instead. |
+| HD haptics selected but it says "rumble motors" | Over USB, use a **data cable** (Windows only creates the controller's audio device over USB). Over Bluetooth the status should say *HD haptics (Bluetooth, experimental)* once sound is captured. |
+| HD haptics over Bluetooth feel weak, late or nothing | It is experimental: the signal is 3 kHz, 8-bit and shares the Bluetooth link. Use a USB cable for full HD haptics, or *Rumble motors* over Bluetooth. Please report what you feel. |
+| Gyro aims the wrong way | Tick *Invert left / right* or *Invert up / down* in the Gyro tab (and please open an issue so the default can be fixed). |
+| Gyro: small turns do nothing / the view creeps | Raise *Skip game deadzone* if small turns do nothing; lower it, raise *Ignore below* or press **Calibrate** if it creeps. |
+| Gyro says "No gyro data yet" | Bluetooth is still in simple mode: reconnect the controller (see above). |
 | Sound to vibration feels nothing in games, but the test works | The game plays through a different output than the one selected. In *Settings → Listen to* pick the device you actually hear the game on (e.g. *SteelSeries Sonar - Gaming*, your headset). |
 | "No controller" | Check the cable or Bluetooth. Close Steam and DS4Windows, they can grab the controller. |
 | Cable plugged in but it still says Bluetooth | The DualSense stays on Bluetooth while charging. Turn it off (hold PS ~10 s) or turn PC Bluetooth off, then plug in. |
@@ -169,6 +194,7 @@ For scripting or debugging, everything also works without the window (run as adm
 
 - `scripts\setup.bat` once, then `scripts\build.bat` to build.
 - **Auto-build while developing:** start `scripts\dev_watch.bat` (as administrator) and leave it open. Creating an empty file named `.rebuild` in the project folder closes the app, rebuilds `dist\DualSenseBridge.exe` and starts it again (`build_log.txt`, `build_status.txt`). An empty `.rundiag` runs `scripts\diag.py` and writes `diag_out.txt`.
+- **Tests:** `scripts\test.bat` (or `python -m pytest tests`). They need no controller, driver or Windows: `hid` and `vgamepad` are replaced by fakes. They cover the USB / Bluetooth report parsing, output reports and CRC, trigger effects, every profile, mapping, deadzones, gyro, Bluetooth haptics and the engine loop with a scripted controller. GitHub Actions runs them on every push, and a release is only built if they pass.
 - README images: `scripts\\screenshots.py` (run with the project's Python) re-creates `docs/screenshot-*.png` and `docs/demo.gif` from the real window with demo values.
 - Releases: bump `src/version.py`, update `CHANGELOG.md`, push, and push a tag `vX.Y.Z`. GitHub Actions builds the exe, the installer and the portable zip.
 
@@ -186,7 +212,14 @@ DualSenseBridge/
 │   ├── output.py          rumble, trigger effects, Bluetooth CRC32
 │   ├── hiding.py          HidHide control
 │   ├── bridge_profiles.py reads profiles.json
-│   ├── audio_haptics.py   sound to vibration (WASAPI loopback → motors)
+│   ├── audio_haptics.py   sound to vibration (WASAPI loopback → motors / HD haptics)
+│   ├── bt_haptics.py      HD haptics over Bluetooth (report 0x32, experimental)
+│   ├── mapping.py         button remapping, stick and trigger deadzones
+│   ├── gyro.py            gyro aiming → right stick
+│   ├── profile_editor.py  editor logic, your own profiles (my_profiles.json)
+│   ├── editor_tab.py      Profile editor tab
+│   ├── controls_tab.py    Controls tab
+│   ├── gyro_tab.py        Gyro tab
 │   ├── game_watch.py      detects the game in the foreground
 │   ├── version.py         app version + repo name (update check)
 │   └── trigger_test.py    command-line trigger effect test
@@ -194,12 +227,17 @@ DualSenseBridge/
 │   ├── setup.bat          run from source: venv, packages, desktop shortcut
 │   ├── build.bat          build the exe (and the installer if Inno Setup is installed)
 │   ├── get_drivers.ps1    downloads the ViGEmBus / HidHide installers to bundle
+│   ├── test.bat           runs the tests
+│   ├── screenshots.py     README images from the real window
 │   ├── dev_watch.bat/.ps1 auto-rebuild helper for development
 │   └── diag.py            diagnostics run by dev_watch
+├── tests/                 pytest, no hardware needed
 ├── installer/DualSenseBridge.iss   Inno Setup script
 ├── assets/icon.ico
 ├── docs/how-it-works.svg
-└── .github/workflows/release.yml   builds the exe, the installer and the portable zip on every v* tag
+└── .github/workflows/
+    ├── tests.yml          runs the tests on every push
+    └── release.yml        tests, then builds the exe, the installer and the portable zip on every v* tag
 ```
 
 ## Roadmap
@@ -217,17 +255,18 @@ DualSenseBridge/
 - [x] DualShock 4 support (untested on hardware so far: reports welcome)
 - [x] Sound to vibration over USB and Bluetooth (rumble motors)
 - [x] Real HD haptics from game audio over USB (DualSense audio channels 3–4)
-- [ ] HD haptics over Bluetooth (reverse-engineered protocol, experimental)
+- [x] HD haptics over Bluetooth (reverse-engineered protocol, experimental)
 - [x] Automatic profile and Xbox mode per game
-- [ ] Profile editor with live preview
-- [ ] Gyro aiming, stick deadzones, button remapping
+- [x] Profile editor with live preview, your own profiles for any game
+- [x] Gyro aiming, stick deadzones, button remapping
+- [x] Automated tests (no hardware needed)
 
 ## Credits
 
 The installer bundles the unmodified ViGEmBus (BSD-3-Clause) and HidHide (MIT) installers from Nefarius Software Solutions.
 
 
-Built on [hidapi](https://github.com/trezor/cython-hidapi), [vgamepad](https://github.com/yannbouteiller/vgamepad), [ViGEmBus](https://github.com/nefarius/ViGEmBus) and [HidHide](https://github.com/nefarius/HidHide). DualSense report layouts follow the Linux `hid-playstation` driver and community documentation.
+Built on [hidapi](https://github.com/trezor/cython-hidapi), [vgamepad](https://github.com/yannbouteiller/vgamepad), [ViGEmBus](https://github.com/nefarius/ViGEmBus) and [HidHide](https://github.com/nefarius/HidHide). DualSense report layouts follow the Linux `hid-playstation` driver and community documentation. The Bluetooth HD haptics protocol (report 0x32) was reverse-engineered by [SAxense](https://apps.sdore.me/SAxense) ([source](https://github.com/egormanga/SAxense), MPL-2.0); `bt_haptics.py` is an independent implementation from its description.
 
 Not affiliated with Sony or Microsoft. DualSense and PlayStation are trademarks of Sony Interactive Entertainment; Xbox is a trademark of Microsoft.
 

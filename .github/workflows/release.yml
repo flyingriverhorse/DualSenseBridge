@@ -39,6 +39,11 @@ jobs:
           if (-not (Test-Path vendor/vgamepad/win/vigem/client/x64/ViGEmClient.dll)) { throw "vgamepad unpack failed" }
           Write-Host "vgamepad unpacked"
 
+      - name: Run tests
+        run: |
+          pip install pytest
+          python -m pytest tests -q
+
       - name: Build exe
         run: >
           pyinstaller --noconfirm --clean --onefile --windowed --uac-admin
